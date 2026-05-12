@@ -42,6 +42,16 @@
         {cfg.label}
       </span>
     </div>
+
+    <!-- Pending identification dot -->
+    {#if plant.metadata?.pending_candidate}
+      <div class="absolute top-2 left-2">
+        <span class="flex h-2 w-2">
+          <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
+          <span class="relative inline-flex rounded-full h-2 w-2 bg-blue-400"></span>
+        </span>
+      </div>
+    {/if}
   </div>
 
   <!-- Info -->

@@ -1,12 +1,18 @@
 <script lang="ts">
   import { Search, BookOpen, Leaf, Droplets, Sun, Wind, Plus } from 'lucide-svelte';
-  import { getLightLabel, getWaterLabel, getHumidityLabel } from '$lib/utils';
+  import { getLightLabel, getWaterLabel, getHumidityLabel, PLANT_CATEGORIES, getCategoryLabel } from '$lib/utils';
 
   let { data } = $props();
   let search = $state('');
+  let categoryFilter = $state('');
+
+  const usedCategories = $derived(
+    PLANT_CATEGORIES.filter((cat) => data.library.some((s) => s.categories?.includes(cat.value)))
+  );
 
   const filtered = $derived(
     data.library.filter((s) => {
+      if (categoryFilter && !s.categories?.includes(categoryFilter)) return false;
       if (!search) return true;
       const q = search.toLowerCase();
       return [s.id, s.genus, s.species, s.cultivar, ...s.common_names]
@@ -43,6 +49,26 @@
     </a>
   </div>
 
+  <!-- Category chips -->
+  {#if usedCategories.length > 0}
+    <div class="flex gap-2 px-4 py-2 border-b border-surface-3/50 overflow-x-auto scrollbar-none">
+      <button
+        onclick={() => (categoryFilter = '')}
+        class={['px-3 py-1 rounded-full text-xs border whitespace-nowrap transition-colors flex-shrink-0', !categoryFilter ? 'border-accent-green bg-accent-green/15 text-accent-green font-medium' : 'border-surface-3 text-gray-400 hover:border-gray-500'].join(' ')}
+      >
+        Tout
+      </button>
+      {#each usedCategories as cat (cat.value)}
+        <button
+          onclick={() => (categoryFilter = categoryFilter === cat.value ? '' : cat.value)}
+          class={['px-3 py-1 rounded-full text-xs border whitespace-nowrap transition-colors flex-shrink-0', categoryFilter === cat.value ? 'border-accent-green bg-accent-green/15 text-accent-green font-medium' : 'border-surface-3 text-gray-400 hover:border-gray-500'].join(' ')}
+        >
+          {cat.label}
+        </button>
+      {/each}
+    </div>
+  {/if}
+
   <div class="flex-1 overflow-y-auto p-4">
     {#if filtered.length === 0}
       <div class="text-center text-gray-600 py-16">
@@ -54,16 +80,25 @@
         {#each filtered as species (species.id)}
           <a href="/library/{species.id}" class="card p-4 space-y-3 hover:border-accent-green/30 transition-colors block">
             <div>
-              <h3 class="font-semibold text-gray-100">
-                {species.genus}
-                {#if species.cultivar}
-                  <span class="text-accent-green">'{species.cultivar}'</span>
-                {:else}
-                  <span class="italic text-gray-300">{species.species}</span>
-                {/if}
-              </h3>
               {#if species.common_names.length > 0}
-                <p class="text-xs text-gray-500 mt-0.5">{species.common_names.join(', ')}</p>
+                <h3 class="font-semibold text-gray-100">{species.common_names[0]}</h3>
+                <p class="text-xs text-gray-400 italic mt-0.5">
+                  {species.genus}
+                  {#if species.cultivar}
+                    <span class="not-italic text-accent-green">'{species.cultivar}'</span>
+                  {:else}
+                    {species.species}
+                  {/if}
+                </p>
+              {:else}
+                <h3 class="font-semibold text-gray-100 italic">
+                  {species.genus}
+                  {#if species.cultivar}
+                    <span class="not-italic text-accent-green">'{species.cultivar}'</span>
+                  {:else}
+                    {species.species}
+                  {/if}
+                </h3>
               {/if}
               <p class="text-xs text-gray-600 mt-0.5">{species.family}{species.origin ? ` · ${species.origin}` : ''}</p>
             </div>

@@ -1,8 +1,10 @@
 <script lang="ts">
-  import { Camera, LayoutGrid, List, Search, SlidersHorizontal, X, Plus, Leaf } from 'lucide-svelte';
+  import { Camera, LayoutGrid, List, Search, SlidersHorizontal, X, Plus, Leaf, ArrowRight } from 'lucide-svelte';
+  import { invalidateAll } from '$app/navigation';
   import PlantCard from '$lib/components/PlantCard.svelte';
   import PlantList from '$lib/components/PlantList.svelte';
   import type { Plant } from '$lib/types';
+  import { PLANT_CATEGORIES, getCategoryLabel } from '$lib/utils';
 
   let { data } = $props();
 
@@ -10,26 +12,33 @@
   let search = $state('');
   let statusFilter = $state('');
   let locationFilter = $state('');
+  let categoryFilter = $state('');
   let sortField = $state('added_at');
   let sortOrder = $state('desc');
   let showFilters = $state(false);
   let isCapturing = $state(false);
   let captureInput: HTMLInputElement;
+  let lastAddedId = $state<string | null>(null);
 
-  type PlantRow = Plant & { main_photo_url?: string };
+  type PlantRow = Plant & { main_photo_url?: string; species_categories: string[] };
 
   const plants = $derived<PlantRow[]>(data.plants ?? []);
 
   const locations = $derived([...new Set(plants.map((p) => p.location).filter(Boolean) as string[])]);
+
+  const usedCategories = $derived(
+    PLANT_CATEGORIES.filter((cat) => plants.some((p) => p.species_categories?.includes(cat.value)))
+  );
 
   const filtered = $derived(
     plants
       .filter((p) => {
         if (statusFilter && p.status !== statusFilter) return false;
         if (locationFilter && p.location !== locationFilter) return false;
+        if (categoryFilter && !p.species_categories?.includes(categoryFilter)) return false;
         if (search) {
           const q = search.toLowerCase();
-          const hay = [p.nickname, p.location, p.species_id, ...p.tags].filter(Boolean).join(' ').toLowerCase();
+          const hay = [p.nickname, p.location, p.species_id, p.cultivar, ...p.tags].filter(Boolean).join(' ').toLowerCase();
           if (!hay.includes(q)) return false;
         }
         return true;
@@ -56,7 +65,10 @@
       fd.append('photo', file);
       const res = await fetch('/api/plants', { method: 'POST', body: fd });
       if (res.ok) {
-        window.location.reload();
+        const plant = await res.json();
+        lastAddedId = plant.id;
+        await invalidateAll();
+        setTimeout(() => { lastAddedId = null; }, 8000);
       }
     } finally {
       isCapturing = false;
@@ -64,13 +76,15 @@
     }
   }
 
+
+  const hasActiveFilters = $derived(!!(search || statusFilter || locationFilter || categoryFilter));
+
   function clearFilters() {
     search = '';
     statusFilter = '';
     locationFilter = '';
+    categoryFilter = '';
   }
-
-  const hasActiveFilters = $derived(!!(search || statusFilter || locationFilter));
 </script>
 
 <svelte:head>
@@ -99,7 +113,7 @@
     >
       <SlidersHorizontal class="w-4 h-4" />
       {#if hasActiveFilters}
-        <span class="text-xs">{[statusFilter, locationFilter, search].filter(Boolean).length}</span>
+        <span class="text-xs">{[statusFilter, locationFilter, categoryFilter, search].filter(Boolean).length}</span>
       {/if}
     </button>
 
@@ -127,6 +141,26 @@
       <span class="hidden md:inline">Ajouter</span>
     </a>
   </div>
+
+  <!-- Category chips — toujours visibles si des catégories existent -->
+  {#if usedCategories.length > 0}
+    <div class="flex gap-2 px-4 py-2 border-b border-surface-3/50 overflow-x-auto scrollbar-none">
+      <button
+        onclick={() => (categoryFilter = '')}
+        class={['px-3 py-1 rounded-full text-xs border whitespace-nowrap transition-colors flex-shrink-0', !categoryFilter ? 'border-accent-green bg-accent-green/15 text-accent-green font-medium' : 'border-surface-3 text-gray-400 hover:border-gray-500'].join(' ')}
+      >
+        Tout
+      </button>
+      {#each usedCategories as cat (cat.value)}
+        <button
+          onclick={() => (categoryFilter = categoryFilter === cat.value ? '' : cat.value)}
+          class={['px-3 py-1 rounded-full text-xs border whitespace-nowrap transition-colors flex-shrink-0', categoryFilter === cat.value ? 'border-accent-green bg-accent-green/15 text-accent-green font-medium' : 'border-surface-3 text-gray-400 hover:border-gray-500'].join(' ')}
+        >
+          {cat.label}
+        </button>
+      {/each}
+    </div>
+  {/if}
 
   <!-- Filter bar -->
   {#if showFilters}
@@ -232,6 +266,17 @@
     {/if}
   </div>
 </div>
+
+<!-- Toast dernière plante ajoutée -->
+{#if lastAddedId}
+  <div class="fixed bottom-28 right-4 z-30 flex items-center gap-3 bg-surface-1 border border-surface-3 rounded-xl px-4 py-3 shadow-xl">
+    <span class="text-sm text-gray-300">Plante ajoutée</span>
+    <a href="/plants/{lastAddedId}" class="btn btn-primary h-8 px-3 text-xs flex items-center gap-1">
+      Voir
+      <ArrowRight class="w-3 h-3" />
+    </a>
+  </div>
+{/if}
 
 <!-- FAB – Quick Snap (mobile) -->
 <div class="fixed bottom-6 right-6 flex flex-col gap-3 z-20">

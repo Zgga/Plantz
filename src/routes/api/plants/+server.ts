@@ -17,7 +17,34 @@ import {
   PLANTS_DIR
 } from '$lib/server/fs-utils';
 import { generateRandomNickname, getPhotoUrl, isImageFile } from '$lib/utils';
+import { identifyWithPlantNet } from '$lib/server/identification';
+import { env } from '$env/dynamic/private';
 import path from 'path';
+
+async function runBackgroundIdentification(plantId: string, buffer: Buffer, filename: string, apiKey: string) {
+  try {
+    const candidates = await identifyWithPlantNet(buffer, filename, apiKey);
+    const top = candidates[0];
+    if (!top || top.score < 0.15) return;
+    const existing = await readJsonFile<Plant>(plantDataPath(plantId));
+    if (!existing) return;
+    await writeJsonFile(plantDataPath(plantId), {
+      ...existing,
+      metadata: {
+        ...existing.metadata,
+        pending_candidate: {
+          scientific_name: top.scientificName,
+          genus: top.genus,
+          common_names: top.commonNames,
+          score: top.score
+        }
+      }
+    });
+    console.log(`[bg-identify] ${plantId} → ${top.scientificName} (${Math.round(top.score * 100)}%)`);
+  } catch (err) {
+    console.error('[bg-identify] erreur:', err instanceof Error ? err.message : err);
+  }
+}
 
 export const GET: RequestHandler = async ({ url }) => {
   await ensureDataDirs();
@@ -82,9 +109,10 @@ export const POST: RequestHandler = async ({ request }) => {
   let tags: string[] = [];
   let photoBuffer: Buffer | undefined;
   let photoFilename: string | undefined;
+  let formData: FormData | undefined;
 
   if (contentType.includes('multipart/form-data')) {
-    const formData = await request.formData();
+    formData = await request.formData();
     nickname = (formData.get('nickname') as string) || '';
     species_id = (formData.get('species_id') as string) || undefined;
     location = (formData.get('location') as string) || undefined;
@@ -135,6 +163,12 @@ export const POST: RequestHandler = async ({ request }) => {
 
   if (photoBuffer && photoFilename) {
     await saveBuffer(path.join(photosDir, photoFilename), photoBuffer);
+  }
+
+  // Quick snap = formData sans champ 'status' — identification en arrière-plan
+  const isQuickSnap = contentType.includes('multipart/form-data') && !formData?.has('status');
+  if (isQuickSnap && photoBuffer && photoFilename && env.PLANTNET_API_KEY) {
+    runBackgroundIdentification(id, photoBuffer, photoFilename, env.PLANTNET_API_KEY).catch(() => {});
   }
 
   return json(

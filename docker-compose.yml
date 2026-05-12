@@ -14,6 +14,11 @@ services:
       - NODE_ENV=production
       - PORT=3000
       - DATA_DIR=/data
+      # Identification de plantes (voir .env.example)
+      - PLANTNET_API_KEY=${PLANTNET_API_KEY:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - OPENPLANTBOOK_CLIENT_ID=${OPENPLANTBOOK_CLIENT_ID:-}
+      - OPENPLANTBOOK_CLIENT_SECRET=${OPENPLANTBOOK_CLIENT_SECRET:-}
     restart: unless-stopped
     deploy:
       replicas: 1

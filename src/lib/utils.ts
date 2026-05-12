@@ -88,10 +88,37 @@ export function getHumidityLabel(humidity: string): string {
   return labels[humidity] ?? humidity;
 }
 
+export const PLANT_CATEGORIES: { value: string; label: string }[] = [
+  { value: 'aroid', label: 'Aroid' },
+  { value: 'succulent', label: 'Succulente' },
+  { value: 'cactus', label: 'Cactus' },
+  { value: 'caudex', label: 'Caudex' },
+  { value: 'carnivore', label: 'Carnivore' },
+  { value: 'orchid', label: 'Orchidée' },
+  { value: 'fern', label: 'Fougère' },
+  { value: 'semi-aquatic', label: 'Semi-aquatique' },
+  { value: 'aquatic', label: 'Aquatique' },
+  { value: 'tropical', label: 'Tropical' },
+];
+
+export function getCategoryLabel(value: string): string {
+  return PLANT_CATEGORIES.find((c) => c.value === value)?.label ?? value;
+}
+
 export function isImageFile(filename: string): boolean {
   return /\.(jpg|jpeg|png|webp|gif|avif)$/i.test(filename);
 }
 
 export function getPhotoUrl(plantId: string, filename: string): string {
   return `/api/plants/${plantId}/photos/${encodeURIComponent(filename)}`;
+}
+
+export function composeNickname(
+  genus: string | undefined,
+  commonNames: string[] | undefined,
+  cultivar: string | undefined
+): string {
+  const part1 = genus?.trim() || '';
+  const part2 = (commonNames?.[0] || cultivar || '').trim();
+  return [part1, part2].filter(Boolean).join(' ');
 }

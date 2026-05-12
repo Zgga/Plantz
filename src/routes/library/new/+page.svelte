@@ -1,6 +1,6 @@
 <script lang="ts">
   import { ArrowLeft, Plus } from 'lucide-svelte';
-  import { slugify } from '$lib/utils';
+  import { slugify, PLANT_CATEGORIES } from '$lib/utils';
 
   let genus = $state('');
   let species = $state('');
@@ -18,8 +18,15 @@
   let toxicity = $state('');
   let growthRate = $state('');
   let notes = $state('');
+  let categories = $state<string[]>([]);
 
   let submitting = $state(false);
+
+  function toggleCategory(value: string) {
+    categories = categories.includes(value)
+      ? categories.filter((c) => c !== value)
+      : [...categories, value];
+  }
   let errorMsg = $state('');
 
   const autoId = $derived(
@@ -53,7 +60,8 @@
       },
       ...(toxicity ? { toxicity } : {}),
       ...(growthRate ? { growth_rate: growthRate } : {}),
-      ...(notes.trim() ? { notes: notes.trim() } : {})
+      ...(notes.trim() ? { notes: notes.trim() } : {}),
+      ...(categories.length ? { categories } : {})
     };
 
     try {
@@ -200,6 +208,20 @@
             <option value="medium">Moyenne</option>
             <option value="fast">Rapide</option>
           </select>
+        </div>
+        <div class="sm:col-span-2">
+          <label class="label">Catégories</label>
+          <div class="flex flex-wrap gap-2 mt-1">
+            {#each PLANT_CATEGORIES as cat (cat.value)}
+              <button
+                type="button"
+                onclick={() => toggleCategory(cat.value)}
+                class={['px-3 py-1 rounded-full text-xs border transition-colors', categories.includes(cat.value) ? 'border-accent-green bg-accent-green/15 text-accent-green font-medium' : 'border-surface-3 text-gray-400 hover:border-gray-500'].join(' ')}
+              >
+                {cat.label}
+              </button>
+            {/each}
+          </div>
         </div>
         <div class="sm:col-span-2">
           <label class="label" for="notes">Notes</label>

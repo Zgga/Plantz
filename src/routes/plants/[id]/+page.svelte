@@ -3,11 +3,12 @@
     ArrowLeft, Edit3, Save, X, Trash2, Camera, Star, MapPin,
     Leaf, Calendar, FlaskConical, Droplets, Sun, Wind, Tag,
     Plus, ChevronDown, ChevronUp, FileText, Image, Info, Crop, CalendarDays,
-    Bell, Check, Droplets as Water, Flower2, Shovel
+    Bell, Check, Droplets as Water, Flower2, Shovel, Scan, Copy
   } from 'lucide-svelte';
   import { marked } from 'marked';
-  import { formatDate, formatDateTime, getLightLabel, getWaterLabel, getHumidityLabel } from '$lib/utils';
+  import { formatDate, formatDateTime, getLightLabel, getWaterLabel, getHumidityLabel, composeNickname } from '$lib/utils';
   import CoverCropModal from '$lib/components/CoverCropModal.svelte';
+  import IdentifyModal from '$lib/components/IdentifyModal.svelte';
   import SpeciesCombobox from '$lib/components/SpeciesCombobox.svelte';
   import type { Plant } from '$lib/types';
 
@@ -27,18 +28,79 @@
   let activeTab = $state<'info' | 'journal' | 'photos'>('info');
   let uploadingPhoto = $state(false);
   let deletingPlant = $state(false);
+  let cloningPlant = $state(false);
   let cropModalPhoto = $state<{ filename: string; url: string } | null>(null);
+  let identifyModalPhoto = $state<string | null>(null);
+  let candidateDismissed = $state(false);
+  let confirmingCandidate = $state(false);
+
+  // Polling : si la plante est new sans candidat, on attend que PlantNet finisse (browser only)
+  $effect(() => {
+    if (typeof window === 'undefined') return;
+    if (plant.status !== 'new' || plant.metadata?.pending_candidate || candidateDismissed) return;
+    let active = true;
+    let attempts = 0;
+    const poll = async () => {
+      if (!active || attempts >= 10) return;
+      attempts++;
+      await new Promise((r) => setTimeout(r, 3000));
+      if (!active) return;
+      const res = await fetch(`/api/plants/${plant.id}`);
+      if (!active) return;
+      if (res.ok) {
+        const updated = await res.json();
+        if (updated.metadata?.pending_candidate) {
+          plant = { ...plant, metadata: updated.metadata };
+          return;
+        }
+      }
+      poll();
+    };
+    poll();
+    return () => { active = false; };
+  });
+
+  $effect(() => {
+    if (typeof window !== 'undefined'
+      && new URL(window.location.href).searchParams.has('identify')
+      && plant.main_photo_filename) {
+      identifyModalPhoto = plant.main_photo_filename;
+    }
+  });
 
   // Editable form draft – initialized lazily inside startEdit
   let draft = $state({ ...data.plant });
 
+  // Composer state for edit mode
+  let showEditNaming = $state(false);
+  let editingGenus = $state('');
+  let editingCultivar = $state('');
+  let editingCommonName = $state('');
+
+  const draftSpecies = $derived(library.find((s) => s.id === draft.species_id));
+  const autoComposedInEdit = $derived(
+    composeNickname(
+      editingGenus || draftSpecies?.genus,
+      editingCommonName ? [editingCommonName] : draftSpecies?.common_names,
+      editingCultivar || draft.cultivar
+    )
+  );
+
   function startEdit() {
     draft = { ...plant };
+    showEditNaming = false;
+    editingGenus = '';
+    editingCultivar = '';
+    editingCommonName = '';
     editing = true;
   }
 
   function cancelEdit() {
     draft = { ...plant };
+    showEditNaming = false;
+    editingGenus = '';
+    editingCultivar = '';
+    editingCommonName = '';
     editing = false;
   }
 
@@ -171,6 +233,71 @@
     cropModalPhoto = null;
   }
 
+  function applyIdentification(
+    speciesId: string,
+    confidence: number,
+    source: 'plantnet' | 'claude',
+    commonNames: string[],
+    nickname: string
+  ) {
+    draft = {
+      ...plant,
+      species_id: speciesId,
+      nickname: nickname || commonNames[0] || plant.nickname,
+      status: plant.status === 'new' ? 'ok' : plant.status,
+      metadata: {
+        ...plant.metadata,
+        last_identification_confidence: confidence,
+        last_identification_source: source
+      }
+    };
+    identifyModalPhoto = null;
+    editing = true;
+  }
+
+  async function confirmCandidate() {
+    const c = plant.metadata?.pending_candidate;
+    if (!c) return;
+    confirmingCandidate = true;
+    try {
+      const speciesName = c.scientific_name.replace(c.genus, '').trim().split(' ')[0] ?? '';
+      const ensureRes = await fetch('/api/library/ensure', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ genus: c.genus, species: speciesName, common_names: c.common_names })
+      });
+      if (!ensureRes.ok) throw new Error();
+      const { id: speciesId } = await ensureRes.json();
+
+      const { pending_candidate: _pc, ...restMeta } = plant.metadata ?? {};
+      const newNickname = c.common_names[0] || c.scientific_name;
+      const putRes = await fetch(`/api/plants/${plant.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ species_id: speciesId, status: 'ok', nickname: newNickname, metadata: restMeta })
+      });
+      if (!putRes.ok) throw new Error();
+      // Mise à jour locale directe — pas de reload
+      plant = { ...plant, species_id: speciesId, status: 'ok', nickname: newNickname, metadata: restMeta };
+      const foundSpecies = library.find((s) => s.id === speciesId);
+      if (foundSpecies) species = foundSpecies;
+      confirmingCandidate = false;
+    } catch {
+      confirmingCandidate = false;
+    }
+  }
+
+  async function dismissCandidate() {
+    candidateDismissed = true;
+    const { pending_candidate: _pc, ...restMeta } = plant.metadata ?? {};
+    await fetch(`/api/plants/${plant.id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ metadata: restMeta })
+    });
+    plant = { ...plant, metadata: restMeta };
+  }
+
   let editingDateFor = $state<string | null>(null);
   let editingDateValue = $state('');
 
@@ -214,6 +341,19 @@
     else deletingPlant = false;
   }
 
+  async function clonePlant() {
+    cloningPlant = true;
+    try {
+      const res = await fetch(`/api/plants/${plant.id}/clone`, { method: 'POST' });
+      if (res.ok) {
+        const data = await res.json();
+        window.location.href = `/plants/${data.id}`;
+      }
+    } finally {
+      cloningPlant = false;
+    }
+  }
+
   const coverPhoto = $derived(photos.find((p) => p.filename === plant.main_photo_filename) ?? photos[0]);
 
   const speciesOptions = $derived(
@@ -237,11 +377,54 @@
   />
 {/if}
 
+{#if identifyModalPhoto}
+  <IdentifyModal
+    plantId={plant.id}
+    photoFilename={identifyModalPhoto}
+    onApply={applyIdentification}
+    onClose={() => (identifyModalPhoto = null)}
+  />
+{/if}
+
 <svelte:head>
   <title>{plant.nickname} – Plantz</title>
 </svelte:head>
 
 <div class="max-w-4xl mx-auto px-4 py-6 space-y-6">
+  <!-- Banner identification en attente -->
+  {#if plant.metadata?.pending_candidate && !candidateDismissed}
+    {@const c = plant.metadata.pending_candidate}
+    <div class="rounded-xl bg-blue-500/10 border border-blue-500/20 p-4 flex items-center gap-4">
+      <div class="flex-1 min-w-0">
+        <p class="text-xs text-blue-400 font-medium mb-0.5">Identification suggérée</p>
+        <p class="font-semibold text-gray-100 italic truncate">{c.scientific_name}</p>
+        {#if c.common_names.length > 0}
+          <p class="text-sm text-gray-400 truncate">{c.common_names[0]}</p>
+        {/if}
+      </div>
+      <span class="text-xs font-mono font-semibold px-2 py-1 rounded bg-blue-500/20 text-blue-300 flex-shrink-0">
+        {Math.round(c.score * 100)}%
+      </span>
+      <div class="flex gap-2 flex-shrink-0">
+        <button
+          onclick={confirmCandidate}
+          disabled={confirmingCandidate}
+          class="btn btn-primary h-9 px-4 text-sm"
+        >
+          {#if confirmingCandidate}
+            <span class="animate-spin w-3 h-3 border-2 border-black border-t-transparent rounded-full"></span>
+          {:else}
+            <Check class="w-4 h-4" />
+          {/if}
+          C'est ça
+        </button>
+        <button onclick={dismissCandidate} class="btn btn-ghost h-9 px-3 text-sm">
+          Non
+        </button>
+      </div>
+    </div>
+  {/if}
+
   <!-- Header -->
   <div class="flex items-start gap-4">
     <a href="/" class="btn btn-ghost p-2 mt-1 flex-shrink-0">
@@ -250,13 +433,134 @@
 
     <div class="flex-1 min-w-0">
       {#if editing}
-        <input bind:value={draft.nickname} class="input text-xl font-bold mb-1" placeholder="Nom de la plante" />
+        <!-- Nickname edit with composer -->
+        <div class="space-y-2">
+          {#if !showEditNaming}
+            <div class="flex gap-2 items-center">
+              <input
+                bind:value={draft.nickname}
+                class="input text-xl font-bold flex-1"
+                placeholder={autoComposedInEdit || 'Nom de la plante'}
+              />
+              <button
+                type="button"
+                onclick={() => {
+                  editingGenus = draftSpecies?.genus || '';
+                  editingCultivar = draft.cultivar || '';
+                  editingCommonName = draftSpecies?.common_names?.[0] || '';
+                  showEditNaming = true;
+                }}
+                class="btn btn-ghost h-9 px-2 text-xs flex-shrink-0"
+                title="Composer le nom automatiquement"
+              >
+                ✎ Composer
+              </button>
+            </div>
+          {/if}
+
+          {#if showEditNaming}
+            <div class="space-y-2 p-3 bg-surface-2 rounded-lg">
+              <p class="text-xs text-gray-500 mb-2">Éditer les composants du nom :</p>
+
+              <!-- Genus -->
+              <div>
+                <label class="label text-xs" for="edit-genus-view">Genre</label>
+                <input
+                  id="edit-genus-view"
+                  bind:value={editingGenus}
+                  type="text"
+                  placeholder={draftSpecies?.genus || 'Genre'}
+                  class="input input-sm text-xs"
+                />
+              </div>
+
+              <!-- Species ID (library link) -->
+              <div>
+                <label class="label text-xs" for="edit-species-view">Espèce</label>
+                <select
+                  id="edit-species-view"
+                  bind:value={draft.species_id}
+                  class="select select-sm text-xs"
+                >
+                  <option value="">— Non renseignée —</option>
+                  {#each library as sp (sp.id)}
+                    <option value={sp.id}>{sp.genus} {sp.species}</option>
+                  {/each}
+                </select>
+              </div>
+
+              <!-- Cultivar -->
+              <div>
+                <label class="label text-xs" for="edit-cultivar-view">Cultivar</label>
+                <input
+                  id="edit-cultivar-view"
+                  bind:value={editingCultivar}
+                  type="text"
+                  placeholder="ex: Polly"
+                  class="input input-sm text-xs"
+                />
+              </div>
+
+              <!-- Common name choice -->
+              {#if draftSpecies?.common_names.length}
+                <div>
+                  <label class="label text-xs" for="edit-common-view">Nom commun</label>
+                  <select
+                    id="edit-common-view"
+                    bind:value={editingCommonName}
+                    class="select select-sm text-xs"
+                  >
+                    <option value="">— Cultivar ou genus —</option>
+                    {#each draftSpecies.common_names as cn (cn)}
+                      <option value={cn}>{cn}</option>
+                    {/each}
+                  </select>
+                </div>
+              {/if}
+
+              <!-- Live preview -->
+              <div class="mt-2 p-2 bg-surface-1 rounded text-xs">
+                <span class="text-gray-500">Aperçu : </span>
+                <span class="font-semibold text-gray-100">{autoComposedInEdit}</span>
+              </div>
+
+              <!-- Apply buttons -->
+              <div class="flex gap-2 justify-end pt-1">
+                <button
+                  type="button"
+                  onclick={() => {
+                    showEditNaming = false;
+                    draft.nickname = autoComposedInEdit;
+                    draft.cultivar = editingCultivar;
+                  }}
+                  class="btn btn-primary h-7 px-2 text-xs"
+                >
+                  Appliquer
+                </button>
+                <button
+                  type="button"
+                  onclick={() => (showEditNaming = false)}
+                  class="btn btn-ghost h-7 px-2 text-xs"
+                >
+                  Annuler
+                </button>
+              </div>
+            </div>
+          {/if}
+
+          <p class="text-xs text-gray-600">
+            Libre nommage : vous pouvez renommer comme bon vous semble
+          </p>
+        </div>
       {:else}
         <h1 class="text-2xl font-bold text-gray-100 truncate">{plant.nickname}</h1>
       {/if}
       {#if species}
-        <p class="text-sm text-gray-500 italic mt-0.5">
-          {species.genus} {species.species}{species.cultivar ? ` '${species.cultivar}'` : ''}
+        {#if species.common_names.length > 0}
+          <p class="text-sm text-gray-300 mt-0.5">{species.common_names[0]}</p>
+        {/if}
+        <p class="text-xs text-gray-500 italic mt-0.5">
+          {species.genus} {species.species}{(plant.cultivar ?? species.cultivar) ? ` '${plant.cultivar ?? species.cultivar}'` : ''}
         </p>
       {/if}
     </div>
@@ -270,6 +574,9 @@
           <Save class="w-4 h-4" />
         </button>
       {:else}
+        <button onclick={clonePlant} class="btn btn-ghost p-2" disabled={cloningPlant} title="Dupliquer cette plante">
+          <Copy class="w-4 h-4" />
+        </button>
         <button onclick={startEdit} class="btn btn-ghost p-2">
           <Edit3 class="w-4 h-4" />
         </button>
@@ -353,10 +660,36 @@
           />
         {:else}
           <p class="text-sm text-gray-300 italic">
-            {species ? `${species.genus} ${species.species}${species.cultivar ? ` '${species.cultivar}'` : ''}` : plant.species_id ?? '—'}
+            {species ? `${species.genus} ${species.species}` : plant.species_id ?? '—'}
           </p>
         {/if}
       </div>
+
+      <!-- Cultivar -->
+      <div>
+        <label class="label" for="cultivar">Cultivar</label>
+        {#if editing}
+          <input id="cultivar" bind:value={draft.cultivar} class="input" placeholder="ex: Polly, Thai Constellation…" />
+        {:else}
+          <p class="text-sm text-gray-300">{plant.cultivar ? `'${plant.cultivar}'` : '—'}</p>
+        {/if}
+      </div>
+
+      <!-- Identify button -->
+      {#if !editing && plant.main_photo_filename}
+        <div class="md:col-span-2">
+          <button
+            onclick={() => (identifyModalPhoto = plant.main_photo_filename)}
+            class="btn btn-ghost h-8 px-3 text-xs border border-surface-3"
+          >
+            <Scan class="w-3.5 h-3.5" />
+            {plant.species_id ? 'Re-identifier' : 'Identifier cette plante'}
+            {#if plant.metadata?.last_identification_confidence}
+              <span class="text-gray-500 ml-1">({plant.metadata.last_identification_confidence}% – {plant.metadata.last_identification_source})</span>
+            {/if}
+          </button>
+        </div>
+      {/if}
 
       <!-- Location -->
       <div>
@@ -627,6 +960,13 @@
                   title="Modifier la date"
                 >
                   <CalendarDays class="w-4 h-4" />
+                </button>
+                <button
+                  onclick={() => (identifyModalPhoto = photo.filename)}
+                  class="p-1.5 rounded-lg bg-surface-1/80 text-gray-300 hover:text-accent-green transition-colors"
+                  title="Identifier"
+                >
+                  <Scan class="w-4 h-4" />
                 </button>
                 <button
                   onclick={() => deletePhoto(photo.filename)}

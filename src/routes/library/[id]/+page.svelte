@@ -1,13 +1,16 @@
 <script lang="ts">
-  import { ArrowLeft, Edit3, Save, X, Trash2 } from 'lucide-svelte';
+  import { ArrowLeft, Edit3, Save, X, Trash2, Wand2 } from 'lucide-svelte';
   import type { PageData } from './$types';
   import type { Species } from '$lib/types';
+  import { PLANT_CATEGORIES, getCategoryLabel } from '$lib/utils';
 
   let { data }: { data: PageData } = $props();
 
   let editing = $state(false);
   let saving = $state(false);
   let deleting = $state(false);
+  let enriching = $state(false);
+  let enrichResult = $state<string | null>(null);
   let draft = $state<Species>({ ...data.species });
 
   function startEdit() {
@@ -40,8 +43,32 @@
     else deleting = false;
   }
 
+  async function enrich() {
+    enriching = true;
+    enrichResult = null;
+    try {
+      const res = await fetch(`/api/library/${data.species.id}/enrich`, { method: 'POST' });
+      const body = await res.json();
+      if (res.ok) {
+        const fields: string[] = body.fields_updated ?? [];
+        enrichResult = fields.length > 0 ? `Enrichi : ${fields.join(', ')}` : 'Déjà complet, rien à mettre à jour.';
+        if (fields.length > 0) window.location.reload();
+      } else {
+        enrichResult = body.message ?? 'Erreur lors de l\'enrichissement.';
+      }
+    } finally {
+      enriching = false;
+    }
+  }
+
   function speciesTitle(s: Species) {
     return s.cultivar ? `${s.genus} '${s.cultivar}'` : `${s.genus} ${s.species}`;
+  }
+
+  function toggleCategory(value: string) {
+    draft.categories = (draft.categories ?? []).includes(value)
+      ? (draft.categories ?? []).filter((c) => c !== value)
+      : [...(draft.categories ?? []), value];
   }
 </script>
 
@@ -56,11 +83,16 @@
       <ArrowLeft class="w-4 h-4" />
     </a>
     <div class="flex-1 min-w-0">
-      <h1 class="text-2xl font-bold text-gray-100">
-        {speciesTitle(editing ? draft : data.species)}
-      </h1>
       {#if data.species.common_names.length > 0}
-        <p class="text-sm text-gray-500 mt-0.5">{data.species.common_names.join(', ')}</p>
+        <h1 class="text-2xl font-bold text-gray-100">{data.species.common_names[0]}</h1>
+        <p class="text-sm text-gray-400 italic mt-0.5">
+          {speciesTitle(editing ? draft : data.species)}
+          {#if data.species.common_names.length > 1}
+            <span class="not-italic text-gray-500"> · {data.species.common_names.slice(1).join(', ')}</span>
+          {/if}
+        </p>
+      {:else}
+        <h1 class="text-2xl font-bold text-gray-100 italic">{speciesTitle(editing ? draft : data.species)}</h1>
       {/if}
     </div>
     <div class="flex gap-2 flex-shrink-0">
@@ -68,11 +100,23 @@
         <button onclick={cancelEdit} class="btn btn-ghost p-2" disabled={saving}><X class="w-4 h-4" /></button>
         <button onclick={save} class="btn btn-primary p-2" disabled={saving}><Save class="w-4 h-4" /></button>
       {:else}
+        <button
+          onclick={enrich}
+          class="btn btn-ghost p-2"
+          disabled={enriching}
+          title="Enrichir via OpenPlantBook"
+        >
+          <Wand2 class="w-4 h-4 {enriching ? 'animate-spin' : ''}" />
+        </button>
         <button onclick={startEdit} class="btn btn-ghost p-2"><Edit3 class="w-4 h-4" /></button>
         <button onclick={deleteSpecies} class="btn btn-danger p-2" disabled={deleting}><Trash2 class="w-4 h-4" /></button>
       {/if}
     </div>
   </div>
+
+  {#if enrichResult}
+    <p class="text-xs px-1 {enrichResult.startsWith('Enrichi') ? 'text-accent-green' : 'text-gray-500'}">{enrichResult}</p>
+  {/if}
 
   <!-- Identification -->
   <section class="bg-surface-1 border border-surface-3 rounded-xl p-4 space-y-4">
@@ -192,6 +236,20 @@
     <h2 class="text-sm font-semibold text-gray-300">Informations complémentaires</h2>
     <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
       {#if editing}
+        <div class="sm:col-span-2">
+          <label class="label mb-1 block">Catégories</label>
+          <div class="flex flex-wrap gap-2">
+            {#each PLANT_CATEGORIES as cat (cat.value)}
+              <button
+                type="button"
+                onclick={() => toggleCategory(cat.value)}
+                class={['px-3 py-1 rounded-full text-xs border transition-colors', (draft.categories ?? []).includes(cat.value) ? 'border-accent-green bg-accent-green/15 text-accent-green font-medium' : 'border-surface-3 text-gray-400 hover:border-gray-500'].join(' ')}
+              >
+                {cat.label}
+              </button>
+            {/each}
+          </div>
+        </div>
         <div>
           <label class="label" for="toxicity">Toxicité</label>
           <select id="toxicity" bind:value={draft.toxicity} class="select">
@@ -216,6 +274,18 @@
           <textarea id="notes" bind:value={draft.notes} class="input resize-none h-24"></textarea>
         </div>
       {:else}
+        {#if data.species.categories?.length}
+          <div class="sm:col-span-2">
+            <span class="label block mb-1">Catégories</span>
+            <div class="flex flex-wrap gap-1.5">
+              {#each data.species.categories as cat (cat)}
+                <span class="px-2.5 py-1 rounded-full text-xs bg-accent-green/10 text-accent-green border border-accent-green/20 font-medium">
+                  {getCategoryLabel(cat)}
+                </span>
+              {/each}
+            </div>
+          </div>
+        {/if}
         {#if data.species.toxicity}
           <div><span class="label block">Toxicité</span><p class="text-sm text-gray-200">{data.species.toxicity}</p></div>
         {/if}
@@ -225,7 +295,7 @@
         {#if data.species.notes}
           <div class="sm:col-span-2"><span class="label block">Notes</span><p class="text-sm text-gray-300">{data.species.notes}</p></div>
         {/if}
-        {#if !data.species.toxicity && !data.species.growth_rate && !data.species.notes}
+        {#if !data.species.categories?.length && !data.species.toxicity && !data.species.growth_rate && !data.species.notes}
           <p class="text-sm text-gray-600 sm:col-span-2">Aucune information complémentaire.</p>
         {/if}
       {/if}

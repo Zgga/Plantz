@@ -1,11 +1,13 @@
 <script lang="ts">
   import { ArrowLeft, Camera, Leaf, Plus } from 'lucide-svelte';
   import SpeciesCombobox from '$lib/components/SpeciesCombobox.svelte';
+  import { composeNickname } from '$lib/utils';
 
   let { data } = $props();
 
   let nickname = $state('');
   let species_id = $state('');
+  let cultivar = $state('');
   let location = $state('');
   let status = $state('new');
   let tags = $state('');
@@ -13,6 +15,20 @@
   let photoPreview = $state('');
   let submitting = $state(false);
   let error = $state('');
+
+  let showEditNaming = $state(false);
+  let editingGenus = $state('');
+  let editingCultivar = $state('');
+  let editingCommonName = $state('');
+
+  const selectedSpecies = $derived(data.library.find((s) => s.id === species_id));
+  const autoComposed = $derived(
+    composeNickname(
+      editingGenus || selectedSpecies?.genus,
+      editingCommonName ? [editingCommonName] : selectedSpecies?.common_names,
+      editingCultivar || cultivar
+    )
+  );
 
   function handlePhotoChange(e: Event) {
     const input = e.target as HTMLInputElement;
@@ -31,6 +47,7 @@
       const fd = new FormData();
       if (nickname.trim()) fd.append('nickname', nickname.trim());
       if (species_id) fd.append('species_id', species_id);
+      if (cultivar.trim()) fd.append('cultivar', cultivar.trim());
       if (location.trim()) fd.append('location', location.trim());
       fd.append('status', status);
       if (tags.trim()) fd.append('tags', tags);
@@ -39,7 +56,7 @@
       const res = await fetch('/api/plants', { method: 'POST', body: fd });
       if (res.ok) {
         const plant = await res.json();
-        window.location.href = `/plants/${plant.id}`;
+        window.location.href = `/plants/${plant.id}${photoFile ? '?identify=1' : ''}`;
       } else {
         error = 'Erreur lors de la création de la plante.';
       }
@@ -95,13 +112,124 @@
     <!-- Nickname -->
     <div>
       <label class="label" for="nickname">Surnom</label>
-      <input
-        id="nickname"
-        bind:value={nickname}
-        type="text"
-        class="input"
-        placeholder="Laissez vide pour un nom aléatoire"
-      />
+
+      {#if !showEditNaming}
+        <div class="flex gap-2 items-center">
+          <input
+            id="nickname"
+            bind:value={nickname}
+            type="text"
+            class="input flex-1"
+            placeholder={autoComposed || 'Laissez vide pour un nom aléatoire'}
+          />
+          <button
+            type="button"
+            onclick={() => {
+              editingGenus = selectedSpecies?.genus || '';
+              editingCultivar = cultivar;
+              editingCommonName = selectedSpecies?.common_names?.[0] || '';
+              showEditNaming = true;
+            }}
+            class="btn btn-ghost h-9 px-2 text-xs"
+            title="Composer le nom automatiquement"
+          >
+            ✎ Composer
+          </button>
+        </div>
+      {/if}
+
+      {#if showEditNaming}
+        <div class="space-y-2 p-3 bg-surface-2 rounded-lg">
+          <p class="text-xs text-gray-500 mb-2">Éditer les composants du nom :</p>
+
+          <!-- Genus -->
+          <div>
+            <label class="label text-xs" for="edit-genus">Genre</label>
+            <input
+              id="edit-genus"
+              bind:value={editingGenus}
+              type="text"
+              placeholder={selectedSpecies?.genus || 'Genre'}
+              class="input input-sm text-xs"
+            />
+          </div>
+
+          <!-- Species ID (library link) -->
+          <div>
+            <label class="label text-xs" for="edit-species">Espèce</label>
+            <select
+              id="edit-species"
+              bind:value={species_id}
+              class="select select-sm text-xs"
+            >
+              <option value="">— Non renseignée —</option>
+              {#each data.library as sp (sp.id)}
+                <option value={sp.id}>{sp.genus} {sp.species}</option>
+              {/each}
+            </select>
+          </div>
+
+          <!-- Cultivar -->
+          <div>
+            <label class="label text-xs" for="edit-cultivar">Cultivar</label>
+            <input
+              id="edit-cultivar"
+              bind:value={editingCultivar}
+              type="text"
+              placeholder="ex: Polly"
+              class="input input-sm text-xs"
+            />
+          </div>
+
+          <!-- Common name choice -->
+          {#if selectedSpecies?.common_names.length}
+            <div>
+              <label class="label text-xs" for="edit-common">Nom commun</label>
+              <select
+                id="edit-common"
+                bind:value={editingCommonName}
+                class="select select-sm text-xs"
+              >
+                <option value="">— Cultivar ou genus —</option>
+                {#each selectedSpecies.common_names as cn (cn)}
+                  <option value={cn}>{cn}</option>
+                {/each}
+              </select>
+            </div>
+          {/if}
+
+          <!-- Live preview -->
+          <div class="mt-2 p-2 bg-surface-1 rounded text-xs">
+            <span class="text-gray-500">Aperçu : </span>
+            <span class="font-semibold text-gray-100">{autoComposed}</span>
+          </div>
+
+          <!-- Apply buttons -->
+          <div class="flex gap-2 justify-end pt-1">
+            <button
+              type="button"
+              onclick={() => {
+                showEditNaming = false;
+                nickname = autoComposed;
+              }}
+              class="btn btn-primary h-7 px-2 text-xs"
+            >
+              Appliquer
+            </button>
+            <button
+              type="button"
+              onclick={() => (showEditNaming = false)}
+              class="btn btn-ghost h-7 px-2 text-xs"
+            >
+              Annuler
+            </button>
+          </div>
+        </div>
+      {/if}
+
+      <p class="text-xs text-gray-600 mt-1">
+        Libre nommage : vous pouvez renommer comme bon vous semble après
+      </p>
     </div>
 
     <!-- Species -->
@@ -111,6 +239,18 @@
         library={data.library}
         value={species_id}
         onchange={(id) => (species_id = id)}
+      />
+    </div>
+
+    <!-- Cultivar -->
+    <div>
+      <label class="label" for="cultivar">Cultivar</label>
+      <input
+        id="cultivar"
+        bind:value={cultivar}
+        type="text"
+        class="input"
+        placeholder="ex: Thai Constellation, Polly…"
       />
     </div>
 

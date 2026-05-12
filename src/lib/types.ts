@@ -17,12 +17,14 @@ export interface Species {
   };
   toxicity?: 'non-toxic' | 'toxic-pets' | 'toxic-humans' | 'toxic-all';
   growth_rate?: 'slow' | 'medium' | 'fast';
+  categories?: string[];
   notes?: string;
 }
 
 export interface Plant {
   id: string;
   species_id?: string;
+  cultivar?: string;
   nickname: string;
   status: 'new' | 'ok' | 'alert' | 'dormant';
   location?: string;
@@ -40,6 +42,15 @@ export interface Plant {
   metadata?: {
     last_identification_confidence?: number;
     last_identification_source?: string;
+    identification_cache?: Record<string, {
+      claude?: { genus: string; species: string; common_names: string[]; confidence: number; family: string; notes?: string; cached_at: string };
+    }>;
+    pending_candidate?: {
+      scientific_name: string;
+      genus: string;
+      common_names: string[];
+      score: number;
+    };
   };
 }
 
