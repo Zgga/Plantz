@@ -2,7 +2,8 @@
   import {
     ArrowLeft, Edit3, Save, X, Trash2, Camera, Star, MapPin,
     Leaf, Calendar, FlaskConical, Droplets, Sun, Wind, Tag,
-    Plus, ChevronDown, ChevronUp, FileText, Image, Info, Crop, CalendarDays
+    Plus, ChevronDown, ChevronUp, FileText, Image, Info, Crop, CalendarDays,
+    Bell, Check, Droplets as Water, Flower2, Shovel
   } from 'lucide-svelte';
   import { marked } from 'marked';
   import { formatDate, formatDateTime, getLightLabel, getWaterLabel, getHumidityLabel } from '$lib/utils';
@@ -17,6 +18,7 @@
   let journal = $state(data.journal ?? '');
   let photos = $state(data.photos ? [...data.photos] : []);
   let library = $state(data.library ?? []);
+  let reminders = $state<import('$lib/types').Reminder[]>(data.plant.reminders ?? []);
 
   let editing = $state(false);
   let saving = $state(false);
@@ -106,6 +108,56 @@
       photos = photos.map((p) => ({ ...p, is_cover: p.filename === filename }));
     }
   }
+
+  // ── Reminders ────────────────────────────────────────────────────────────────
+
+  const today = new Date().toISOString().slice(0, 10);
+
+  let addingReminder = $state(false);
+  let newReminder = $state({ type: 'watering' as const, label: '', due_date: today });
+
+  const reminderIcon: Record<string, typeof Bell> = {
+    watering: Water,
+    repotting: Shovel,
+    fertilizing: Flower2,
+    other: Bell
+  };
+
+  async function addReminder() {
+    const res = await fetch(`/api/plants/${plant.id}/reminders`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: newReminder.type, label: newReminder.label || undefined, due_date: newReminder.due_date })
+    });
+    if (res.ok) {
+      const r = await res.json();
+      reminders = [...reminders, r];
+      addingReminder = false;
+      newReminder = { type: 'watering', label: '', due_date: today };
+    }
+  }
+
+  async function toggleReminder(id: string, done: boolean) {
+    const res = await fetch(`/api/plants/${plant.id}/reminders`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id, done })
+    });
+    if (res.ok) reminders = reminders.map((r) => r.id === id ? { ...r, done } : r);
+  }
+
+  async function deleteReminder(id: string) {
+    const res = await fetch(`/api/plants/${plant.id}/reminders`, {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id })
+    });
+    if (res.ok) reminders = reminders.filter((r) => r.id !== id);
+  }
+
+  const reminderTypeLabel: Record<string, string> = {
+    watering: 'Arrosage', repotting: 'Rempotage', fertilizing: 'Fertilisation', other: 'Autre'
+  };
 
   async function saveCoverPosition(pos: { x: number; y: number }) {
     const res = await fetch(`/api/plants/${plant.id}`, {
@@ -391,6 +443,69 @@
               <span class="text-sm text-gray-600">Aucun tag</span>
             {/if}
           </div>
+        {/if}
+      </div>
+
+      <!-- Rappels -->
+      <div class="md:col-span-2 space-y-2">
+        <div class="flex items-center justify-between">
+          <span class="label flex items-center gap-1.5">
+            <Bell class="w-3 h-3" />Rappels
+          </span>
+          {#if !editing}
+            <button onclick={() => (addingReminder = !addingReminder)} class="btn btn-ghost h-7 px-2 text-xs">
+              <Plus class="w-3 h-3" />Ajouter
+            </button>
+          {/if}
+        </div>
+
+        {#if addingReminder && !editing}
+          <div class="card p-3 space-y-2">
+            <div class="grid grid-cols-2 gap-2">
+              <select bind:value={newReminder.type} class="select text-xs h-8">
+                <option value="watering">Arrosage</option>
+                <option value="repotting">Rempotage</option>
+                <option value="fertilizing">Fertilisation</option>
+                <option value="other">Autre</option>
+              </select>
+              <input type="date" bind:value={newReminder.due_date} class="input text-xs h-8" />
+            </div>
+            {#if newReminder.type === 'other'}
+              <input bind:value={newReminder.label} class="input text-xs h-8" placeholder="Description..." />
+            {/if}
+            <div class="flex gap-2 justify-end">
+              <button onclick={() => (addingReminder = false)} class="btn btn-ghost h-7 px-2 text-xs">Annuler</button>
+              <button onclick={addReminder} class="btn btn-primary h-7 px-2 text-xs" disabled={!newReminder.due_date}>
+                <Check class="w-3 h-3" />Créer
+              </button>
+            </div>
+          </div>
+        {/if}
+
+        {#if reminders.length > 0}
+          <ul class="space-y-1">
+            {#each reminders.sort((a, b) => a.due_date.localeCompare(b.due_date)) as r (r.id)}
+              {@const RIcon = reminderIcon[r.type] ?? Bell}
+              {@const overdue = !r.done && r.due_date < today}
+              <li class={['flex items-center gap-2 px-3 py-2 rounded-lg text-sm', r.done ? 'opacity-50' : overdue ? 'bg-accent-red/10' : 'bg-surface-2'].join(' ')}>
+                <RIcon class="w-3.5 h-3.5 flex-shrink-0 {overdue ? 'text-accent-red' : 'text-gray-500'}" />
+                <span class={['flex-1', r.done ? 'line-through text-gray-600' : ''].join(' ')}>
+                  {r.label ?? reminderTypeLabel[r.type]}
+                </span>
+                <span class="text-xs {overdue ? 'text-accent-red font-medium' : 'text-gray-500'}">{formatDate(r.due_date)}</span>
+                {#if !editing}
+                  <button onclick={() => toggleReminder(r.id, !r.done)} class="p-1 rounded text-gray-500 hover:text-accent-green transition-colors">
+                    <Check class="w-3.5 h-3.5" />
+                  </button>
+                  <button onclick={() => deleteReminder(r.id)} class="p-1 rounded text-gray-500 hover:text-accent-red transition-colors">
+                    <X class="w-3.5 h-3.5" />
+                  </button>
+                {/if}
+              </li>
+            {/each}
+          </ul>
+        {:else if !addingReminder}
+          <p class="text-xs text-gray-600">Aucun rappel.</p>
         {/if}
       </div>
 

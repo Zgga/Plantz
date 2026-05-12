@@ -36,6 +36,7 @@ export interface Plant {
   main_photo_filename: string;
   main_photo_position?: { x: number; y: number };
   photos_metadata?: Record<string, { taken_at: string }>;
+  reminders?: Reminder[];
   metadata?: {
     last_identification_confidence?: number;
     last_identification_source?: string;
@@ -51,6 +52,14 @@ export interface PlantWithDetails extends Plant {
 
 export interface JournalEntry {
   content: string;
+}
+
+export interface Reminder {
+  id: string;
+  type: 'watering' | 'repotting' | 'fertilizing' | 'other';
+  label?: string;
+  due_date: string;
+  done: boolean;
 }
 
 export type PlantStatus = Plant['status'];

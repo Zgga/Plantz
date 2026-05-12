@@ -21,10 +21,11 @@ function makeSvg(size) {
 </svg>`;
 }
 
-for (const size of [192, 512]) {
+for (const size of [32, 192, 512]) {
   const svg = Buffer.from(makeSvg(size));
+  const filename = size === 32 ? 'favicon.png' : `icon-${size}.png`;
   await sharp(svg)
     .png()
-    .toFile(path.join(staticDir, `icon-${size}.png`));
-  console.log(`icon-${size}.png ✓`);
+    .toFile(path.join(staticDir, filename));
+  console.log(`${filename} ✓`);
 }
