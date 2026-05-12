@@ -1,0 +1,32 @@
+name: Build and Deploy Plantz
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - 'README.md'
+      - '.gitignore'
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Login to Gitea Registry
+        run: |
+          echo "${{ secrets.DOCKER_TOKEN }}" | docker login your-registry.example.com -u ${{ secrets.DOCKER_USER }} --password-stdin
+
+      - name: Build and Push
+        run: |
+          docker build -t your-registry.example.com/your-username/plantz:latest .
+          docker push your-registry.example.com/your-username/plantz:latest
+
+  deploy-swarm:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    steps:
+      - name: Update Swarm Service
+        run: |
+          # On force le Swarm à retélécharger l'image même si le tag est le même
+          docker service update --image your-registry.example.com/your-username/plantz:latest --force your-swarm-service-name --with-registry-auth
