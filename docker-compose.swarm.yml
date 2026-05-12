@@ -1,0 +1,42 @@
+version: '3.9'
+
+services:
+  plantz:
+    image: plantz:latest
+    ports:
+      - target: 3000
+        published: 3000
+        protocol: tcp
+        mode: host
+    volumes:
+      - type: volume
+        source: plantz_data
+        target: /data
+        volume:
+          nocopy: true
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - DATA_DIR=/data
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 128M
+      placement:
+        constraints:
+          - node.role == manager
+
+volumes:
+  plantz_data:
+    driver: local
+    driver_opts:
+      type: nfs
+      o: "addr=${NFS_SERVER},rw,nfsvers=4"
+      device: ":${NFS_PATH}"
