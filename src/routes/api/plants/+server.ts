@@ -151,7 +151,7 @@ export const POST: RequestHandler = async ({ request }) => {
     location: location || undefined,
     added_at: now,
     tags,
-    main_photo_filename: photoFilename ?? ''
+    main_photo_filename: photoFilename ?? undefined
   };
 
   const dir = plantDir(id);

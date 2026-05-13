@@ -3,7 +3,7 @@ import type { RequestHandler } from './$types';
 import { env } from '$env/dynamic/private';
 import fs from 'fs/promises';
 import path from 'path';
-import { plantDataPath, plantPhotosDir, readJsonFile, writeJsonFile } from '$lib/server/fs-utils';
+import { plantDataPath, plantPhotosDir, readJsonFile, writeJsonFile, assertSafeId, assertSafeFilename } from '$lib/server/fs-utils';
 import { identifyWithClaude } from '$lib/server/identification';
 import type { Plant } from '$lib/types';
 
@@ -12,8 +12,10 @@ export const POST: RequestHandler = async ({ params, request }) => {
   const plant = await readJsonFile<Plant>(plantDataPath(id));
   if (!plant) error(404, 'Plante introuvable');
 
+  assertSafeId(id);
   const { filename } = await request.json();
   if (!filename) error(400, 'filename requis');
+  assertSafeFilename(filename);
 
   // Retourner le cache si disponible
   const cached = plant.metadata?.identification_cache?.[filename]?.claude;
@@ -36,9 +38,14 @@ export const POST: RequestHandler = async ({ params, request }) => {
     const result = await identifyWithClaude(buffer, env.ANTHROPIC_API_KEY ?? '', filename);
     console.log('[identify/refine] Claude result:', result.genus, result.species, result.confidence);
 
-    // Mise en cache dans plant.metadata
-    const cache = plant.metadata?.identification_cache ?? {};
+    // Mise en cache dans plant.metadata (max 50 entrées FIFO)
+    let cache = plant.metadata?.identification_cache ?? {};
     cache[filename] = { ...(cache[filename] ?? {}), claude: { ...result, cached_at: new Date().toISOString() } };
+    const keys = Object.keys(cache);
+    if (keys.length > 50) {
+      const oldest = keys.slice(0, keys.length - 50);
+      for (const k of oldest) delete cache[k];
+    }
     await writeJsonFile(plantDataPath(id), {
       ...plant,
       metadata: { ...plant.metadata, identification_cache: cache }

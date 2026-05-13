@@ -16,5 +16,5 @@ export const GET: RequestHandler = async () => {
     );
   }
 
-  return json({ status: 'ok', data_dir: DATA_DIR });
+  return json({ status: 'ok' });
 };

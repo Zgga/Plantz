@@ -33,6 +33,7 @@
   let identifyModalPhoto = $state<string | null>(null);
   let candidateDismissed = $state(false);
   let confirmingCandidate = $state(false);
+  let actionError = $state<string | null>(null);
 
   // Polling : si la plante est new sans candidat, on attend que PlantNet finisse (browser only)
   $effect(() => {
@@ -45,14 +46,18 @@
       attempts++;
       await new Promise((r) => setTimeout(r, 3000));
       if (!active) return;
-      const res = await fetch(`/api/plants/${plant.id}`);
-      if (!active) return;
-      if (res.ok) {
-        const updated = await res.json();
-        if (updated.metadata?.pending_candidate) {
-          plant = { ...plant, metadata: updated.metadata };
-          return;
+      try {
+        const res = await fetch(`/api/plants/${plant.id}`);
+        if (!active) return;
+        if (res.ok) {
+          const updated = await res.json();
+          if (updated.metadata?.pending_candidate) {
+            plant = { ...plant, metadata: updated.metadata };
+            return;
+          }
         }
+      } catch {
+        // réseau indisponible — on continue le polling
       }
       poll();
     };
@@ -106,6 +111,7 @@
 
   async function saveEdit() {
     saving = true;
+    actionError = null;
     try {
       const res = await fetch(`/api/plants/${plant.id}`, {
         method: 'PUT',
@@ -119,7 +125,11 @@
         if (draft.species_id !== plant.species_id) {
           window.location.reload();
         }
+      } else {
+        actionError = 'Impossible de sauvegarder les modifications.';
       }
+    } catch {
+      actionError = 'Erreur réseau lors de la sauvegarde.';
     } finally {
       saving = false;
     }
@@ -127,15 +137,22 @@
 
   async function addJournalEntry() {
     if (!journalEntry.trim()) return;
-    const res = await fetch(`/api/plants/${plant.id}/journal`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ content: journalEntry })
-    });
-    if (res.ok) {
-      addingEntry = false;
-      journalEntry = '';
-      window.location.reload();
+    actionError = null;
+    try {
+      const res = await fetch(`/api/plants/${plant.id}/journal`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content: journalEntry })
+      });
+      if (res.ok) {
+        addingEntry = false;
+        journalEntry = '';
+        window.location.reload();
+      } else {
+        actionError = 'Impossible d\'enregistrer l\'entrée de journal.';
+      }
+    } catch {
+      actionError = 'Erreur réseau lors de l\'enregistrement.';
     }
   }
 
@@ -186,16 +203,23 @@
   };
 
   async function addReminder() {
-    const res = await fetch(`/api/plants/${plant.id}/reminders`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ type: newReminder.type, label: newReminder.label || undefined, due_date: newReminder.due_date })
-    });
-    if (res.ok) {
-      const r = await res.json();
-      reminders = [...reminders, r];
-      addingReminder = false;
-      newReminder = { type: 'watering', label: '', due_date: today };
+    actionError = null;
+    try {
+      const res = await fetch(`/api/plants/${plant.id}/reminders`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: newReminder.type, label: newReminder.label || undefined, due_date: newReminder.due_date })
+      });
+      if (res.ok) {
+        const r = await res.json();
+        reminders = [...reminders, r];
+        addingReminder = false;
+        newReminder = { type: 'watering', label: '', due_date: today };
+      } else {
+        actionError = 'Impossible d\'ajouter le rappel.';
+      }
+    } catch {
+      actionError = 'Erreur réseau lors de l\'ajout du rappel.';
     }
   }
 
@@ -222,15 +246,21 @@
   };
 
   async function saveCoverPosition(pos: { x: number; y: number }) {
-    const res = await fetch(`/api/plants/${plant.id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...plant, main_photo_position: pos })
-    });
-    if (res.ok) {
-      plant = { ...plant, main_photo_position: pos };
+    try {
+      const res = await fetch(`/api/plants/${plant.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...plant, main_photo_position: pos })
+      });
+      if (res.ok) {
+        plant = { ...plant, main_photo_position: pos };
+        cropModalPhoto = null;
+      } else {
+        actionError = 'Impossible de sauvegarder le recadrage.';
+      }
+    } catch {
+      actionError = 'Erreur réseau lors du recadrage.';
     }
-    cropModalPhoto = null;
   }
 
   function applyIdentification(
@@ -284,6 +314,7 @@
       confirmingCandidate = false;
     } catch {
       confirmingCandidate = false;
+      actionError = 'Impossible de confirmer l\'identification.';
     }
   }
 
@@ -328,7 +359,7 @@
     if (res.ok) {
       photos = photos.filter((p) => p.filename !== filename);
       if (plant.main_photo_filename === filename) {
-        plant = { ...plant, main_photo_filename: photos[0]?.filename ?? '' };
+        plant = { ...plant, main_photo_filename: photos[0]?.filename ?? undefined };
       }
     }
   }
@@ -391,6 +422,15 @@
 </svelte:head>
 
 <div class="max-w-4xl mx-auto px-4 py-6 space-y-6">
+  {#if actionError}
+    <div role="alert" class="rounded-xl bg-red-500/10 border border-red-500/30 px-4 py-3 flex items-center justify-between gap-3">
+      <p class="text-sm text-red-400">{actionError}</p>
+      <button onclick={() => (actionError = null)} class="text-red-400 hover:text-red-300 flex-shrink-0" aria-label="Fermer">
+        <X size={16} />
+      </button>
+    </div>
+  {/if}
+
   <!-- Banner identification en attente -->
   {#if plant.metadata?.pending_candidate && !candidateDismissed}
     {@const c = plant.metadata.pending_candidate}
@@ -679,7 +719,7 @@
       {#if !editing && plant.main_photo_filename}
         <div class="md:col-span-2">
           <button
-            onclick={() => (identifyModalPhoto = plant.main_photo_filename)}
+            onclick={() => (identifyModalPhoto = plant.main_photo_filename ?? null)}
             class="btn btn-ghost h-8 px-3 text-xs border border-surface-3"
           >
             <Scan class="w-3.5 h-3.5" />

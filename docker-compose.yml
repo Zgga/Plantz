@@ -20,6 +20,12 @@ services:
       - OPENPLANTBOOK_CLIENT_ID=${OPENPLANTBOOK_CLIENT_ID:-}
       - OPENPLANTBOOK_CLIENT_SECRET=${OPENPLANTBOOK_CLIENT_SECRET:-}
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
     deploy:
       replicas: 1
       resources:

@@ -34,7 +34,7 @@ export const POST: RequestHandler = async ({ params }) => {
   const source = await readJsonFile<Plant>(plantDataPath(params.id));
   if (!source) error(404, 'Plante introuvable');
 
-  const newId = `plant-${uuidv4()}`;
+  const newId = `plant-${uuidv4().slice(0, 8)}`;
   const newNickname = await nextNickname(source.nickname);
 
   const newPlant: Plant = {
@@ -44,7 +44,7 @@ export const POST: RequestHandler = async ({ params }) => {
     reminders: [],
     photos_metadata: undefined,
     metadata: undefined,
-    main_photo_filename: ''
+    main_photo_filename: undefined
   };
 
   await createDirectory(plantPhotosDir(newId));

@@ -15,6 +15,7 @@ export const POST: RequestHandler = async ({ params, request }) => {
 
   const { content } = await request.json();
   if (!content?.trim()) error(400, 'Contenu manquant');
+  if (content.length > 50_000) error(413, 'Contenu trop long (max 50 000 caractères)');
 
   const now = new Date();
   const dateStr = now.toLocaleString('fr-FR', {

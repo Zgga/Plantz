@@ -35,7 +35,7 @@ export interface Plant {
     material: 'terracotta' | 'plastic' | 'ceramic' | 'other';
   };
   tags: string[];
-  main_photo_filename: string;
+  main_photo_filename?: string;
   main_photo_position?: { x: number; y: number };
   photos_metadata?: Record<string, { taken_at: string }>;
   reminders?: Reminder[];

@@ -1,15 +1,17 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import type { Species } from '$lib/types';
-import { readJsonFile, writeJsonFile, deleteFile, libraryPath } from '$lib/server/fs-utils';
+import { readJsonFile, writeJsonFile, deleteFile, libraryPath, assertSafeId } from '$lib/server/fs-utils';
 
 export const GET: RequestHandler = async ({ params }) => {
+  assertSafeId(params.id);
   const data = await readJsonFile<Species>(libraryPath(params.id));
   if (!data) error(404, 'Espèce introuvable');
   return json(data);
 };
 
 export const PUT: RequestHandler = async ({ params, request }) => {
+  assertSafeId(params.id);
   const existing = await readJsonFile<Species>(libraryPath(params.id));
   if (!existing) error(404, 'Espèce introuvable');
 
@@ -21,6 +23,7 @@ export const PUT: RequestHandler = async ({ params, request }) => {
 };
 
 export const DELETE: RequestHandler = async ({ params }) => {
+  assertSafeId(params.id);
   const existing = await readJsonFile<Species>(libraryPath(params.id));
   if (!existing) error(404, 'Espèce introuvable');
 

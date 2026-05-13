@@ -8,13 +8,16 @@ import {
   listFiles,
   deleteDirectory,
   plantDataPath,
+  plantDir,
   plantJournalPath,
-  plantPhotosDir
+  plantPhotosDir,
+  assertSafeId
 } from '$lib/server/fs-utils';
 import { getPhotoUrl, isImageFile } from '$lib/utils';
 
 export const GET: RequestHandler = async ({ params }) => {
   const { id } = params;
+  assertSafeId(id);
   const plant = await readJsonFile<Plant>(plantDataPath(id));
   if (!plant) error(404, 'Plante introuvable');
 
@@ -30,6 +33,7 @@ export const GET: RequestHandler = async ({ params }) => {
 
 export const PUT: RequestHandler = async ({ params, request }) => {
   const { id } = params;
+  assertSafeId(id);
   const existing = await readJsonFile<Plant>(plantDataPath(id));
   if (!existing) error(404, 'Plante introuvable');
 
@@ -47,10 +51,11 @@ export const PUT: RequestHandler = async ({ params, request }) => {
 
 export const DELETE: RequestHandler = async ({ params }) => {
   const { id } = params;
+  assertSafeId(id);
   const existing = await readJsonFile<Plant>(plantDataPath(id));
   if (!existing) error(404, 'Plante introuvable');
 
-  await deleteDirectory(plantDataPath(id).replace('/data.json', ''));
+  await deleteDirectory(plantDir(id));
 
   return json({ success: true });
 };

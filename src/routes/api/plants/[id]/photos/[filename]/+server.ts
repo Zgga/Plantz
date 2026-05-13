@@ -8,13 +8,17 @@ import {
   deleteFile,
   listFiles,
   plantDataPath,
-  plantPhotosDir
+  plantPhotosDir,
+  assertSafeId,
+  assertSafeFilename
 } from '$lib/server/fs-utils';
 import type { Plant } from '$lib/types';
 import { isImageFile } from '$lib/utils';
 
 export const GET: RequestHandler = async ({ params }) => {
   const { id, filename } = params;
+  assertSafeId(id);
+  assertSafeFilename(filename);
 
   if (!isImageFile(filename)) error(400, 'Type de fichier non supporté');
 
@@ -48,6 +52,8 @@ export const GET: RequestHandler = async ({ params }) => {
 
 export const DELETE: RequestHandler = async ({ params }) => {
   const { id, filename } = params;
+  assertSafeId(id);
+  assertSafeFilename(filename);
 
   const plant = await readJsonFile<Plant>(plantDataPath(id));
   if (!plant) error(404, 'Plante introuvable');
@@ -66,7 +72,7 @@ export const DELETE: RequestHandler = async ({ params }) => {
 
   if (plant.main_photo_filename === filename) {
     const remaining = (await listFiles(photosDir)).filter((f) => isImageFile(f) && !f.includes('_thumb.') && f !== filename);
-    plant.main_photo_filename = remaining[0] ?? '';
+    plant.main_photo_filename = remaining[0] ?? undefined;
   }
 
   await writeJsonFile(plantDataPath(id), plant);
@@ -76,6 +82,8 @@ export const DELETE: RequestHandler = async ({ params }) => {
 
 export const PUT: RequestHandler = async ({ params }) => {
   const { id, filename } = params;
+  assertSafeId(id);
+  assertSafeFilename(filename);
 
   const plant = await readJsonFile<Plant>(plantDataPath(id));
   if (!plant) error(404, 'Plante introuvable');
@@ -88,12 +96,15 @@ export const PUT: RequestHandler = async ({ params }) => {
 
 export const PATCH: RequestHandler = async ({ params, request }) => {
   const { id, filename } = params;
+  assertSafeId(id);
+  assertSafeFilename(filename);
 
   const plant = await readJsonFile<Plant>(plantDataPath(id));
   if (!plant) error(404, 'Plante introuvable');
 
   const body = await request.json() as { taken_at?: string };
   if (body.taken_at) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(body.taken_at)) error(400, 'Format de date invalide (YYYY-MM-DD attendu)');
     plant.photos_metadata = { ...plant.photos_metadata, [filename]: { taken_at: body.taken_at } };
     await writeJsonFile(plantDataPath(id), plant);
   }

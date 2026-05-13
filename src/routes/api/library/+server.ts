@@ -7,7 +7,8 @@ import {
   writeJsonFile,
   listFiles,
   LIBRARY_DIR,
-  libraryPath
+  libraryPath,
+  assertSafeId
 } from '$lib/server/fs-utils';
 import path from 'path';
 
@@ -45,6 +46,9 @@ export const POST: RequestHandler = async ({ request }) => {
 
   const data = await request.json() as Species;
   if (!data.id) error(400, 'ID manquant');
+  assertSafeId(data.id);
+  if (!data.genus?.trim()) error(400, 'Genus manquant');
+  if (!data.species?.trim()) error(400, 'Species manquant');
 
   await writeJsonFile(libraryPath(data.id), data);
 

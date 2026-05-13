@@ -1,5 +1,6 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
+import { randomUUID } from 'crypto';
 import path from 'path';
 import sharp from 'sharp';
 import {
@@ -42,8 +43,9 @@ export const POST: RequestHandler = async ({ params, request }) => {
   if (!file || file.size === 0) error(400, 'Aucun fichier fourni');
 
   const timestamp = new Date().toISOString().slice(0, 19).replace(/[T:]/g, '-');
-  const filename = `${timestamp}.webp`;
-  const thumbFilename = `${timestamp}_thumb.webp`;
+  const uid = randomUUID().slice(0, 8);
+  const filename = `${timestamp}-${uid}.webp`;
+  const thumbFilename = `${timestamp}-${uid}_thumb.webp`;
 
   const photosDir = plantPhotosDir(id);
   await createDirectory(photosDir);

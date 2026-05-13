@@ -1,8 +1,22 @@
 import fs from 'fs/promises';
 import path from 'path';
 import { existsSync } from 'fs';
+import { error } from '@sveltejs/kit';
 
 export const DATA_DIR = process.env.DATA_DIR ?? path.join(process.cwd(), 'data');
+
+const SAFE_ID_RE = /^[a-z0-9-]+$/;
+const SAFE_FILENAME_RE = /^[a-zA-Z0-9._-]+$/;
+
+export function assertSafeId(id: string): void {
+  if (!id || !SAFE_ID_RE.test(id)) error(400, 'Identifiant invalide');
+}
+
+export function assertSafeFilename(filename: string): void {
+  if (!filename || filename.includes('..') || !SAFE_FILENAME_RE.test(filename)) {
+    error(400, 'Nom de fichier invalide');
+  }
+}
 export const PLANTS_DIR = path.join(DATA_DIR, 'plants');
 export const LIBRARY_DIR = path.join(DATA_DIR, 'library');
 
@@ -22,8 +36,13 @@ export async function readJsonFile<T>(filePath: string): Promise<T | null> {
 
 export async function writeJsonFile<T>(filePath: string, data: T): Promise<void> {
   const tmp = filePath + '.tmp';
-  await fs.writeFile(tmp, JSON.stringify(data, null, 2), 'utf-8');
-  await fs.rename(tmp, filePath);
+  try {
+    await fs.writeFile(tmp, JSON.stringify(data, null, 2), 'utf-8');
+    await fs.rename(tmp, filePath);
+  } catch (err) {
+    await fs.unlink(tmp).catch(() => {});
+    throw err;
+  }
 }
 
 export async function readMarkdownFile(filePath: string): Promise<string> {
@@ -36,8 +55,13 @@ export async function readMarkdownFile(filePath: string): Promise<string> {
 
 export async function writeMarkdownFile(filePath: string, content: string): Promise<void> {
   const tmp = filePath + '.tmp';
-  await fs.writeFile(tmp, content, 'utf-8');
-  await fs.rename(tmp, filePath);
+  try {
+    await fs.writeFile(tmp, content, 'utf-8');
+    await fs.rename(tmp, filePath);
+  } catch (err) {
+    await fs.unlink(tmp).catch(() => {});
+    throw err;
+  }
 }
 
 export async function appendMarkdownFile(filePath: string, entry: string): Promise<void> {
