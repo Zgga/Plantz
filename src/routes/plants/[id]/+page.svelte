@@ -1,8 +1,8 @@
 <script lang="ts">
   import {
-    ArrowLeft, Edit3, Save, X, Trash2, Camera, Star, MapPin,
+    ArrowLeft, Edit3, Save, X, Trash2, Camera, MapPin,
     Leaf, Calendar, FlaskConical, Droplets, Sun, Wind, Tag,
-    Plus, ChevronDown, ChevronUp, FileText, Image, Info, Crop, CalendarDays,
+    Plus, ChevronDown, ChevronUp, FileText, Image, Info,
     Bell, Check, Droplets as Water, Flower2, Shovel, Scan, Copy
   } from 'lucide-svelte';
   import { marked } from 'marked';
@@ -10,6 +10,8 @@
   import CoverCropModal from '$lib/components/CoverCropModal.svelte';
   import IdentifyModal from '$lib/components/IdentifyModal.svelte';
   import SpeciesCombobox from '$lib/components/SpeciesCombobox.svelte';
+  import PhotoLightbox from '$lib/components/PhotoLightbox.svelte';
+  import PhotoGallery from '$lib/components/PhotoGallery.svelte';
   import type { Plant } from '$lib/types';
 
   let { data } = $props();
@@ -31,6 +33,7 @@
   let cloningPlant = $state(false);
   let cropModalPhoto = $state<{ filename: string; url: string } | null>(null);
   let identifyModalPhoto = $state<string | null>(null);
+  let lightboxPhoto = $state<{ url: string; taken_at: string | null } | null>(null);
   let candidateDismissed = $state(false);
   let confirmingCandidate = $state(false);
   let actionError = $state<string | null>(null);
@@ -387,6 +390,15 @@
 
   const coverPhoto = $derived(photos.find((p) => p.filename === plant.main_photo_filename) ?? photos[0]);
 
+  const sortedPhotos = $derived(
+    [...photos].sort((a, b) => {
+      if (!a.taken_at && !b.taken_at) return 0;
+      if (!a.taken_at) return 1;
+      if (!b.taken_at) return -1;
+      return a.taken_at.localeCompare(b.taken_at);
+    })
+  );
+
   const speciesOptions = $derived(
     library.map((s) => ({
       value: s.id,
@@ -414,6 +426,14 @@
     photoFilename={identifyModalPhoto}
     onApply={applyIdentification}
     onClose={() => (identifyModalPhoto = null)}
+  />
+{/if}
+
+{#if lightboxPhoto}
+  <PhotoLightbox
+    photoUrl={lightboxPhoto.url}
+    takenAt={lightboxPhoto.taken_at}
+    onClose={() => (lightboxPhoto = null)}
   />
 {/if}
 
@@ -630,12 +650,18 @@
   <!-- Cover photo -->
   <div class="relative aspect-video rounded-xl overflow-hidden bg-surface-2">
     {#if coverPhoto}
-      <img
-        src={coverPhoto.url}
-        alt={plant.nickname}
-        class="w-full h-full object-cover"
-        style={plant.main_photo_position ? `object-position: ${plant.main_photo_position.x}% ${plant.main_photo_position.y}%` : ''}
-      />
+      <button
+        class="w-full h-full block focus:outline-none focus:ring-2 focus:ring-accent-green cursor-zoom-in"
+        onclick={() => (lightboxPhoto = { url: coverPhoto.url, taken_at: coverPhoto.taken_at })}
+        aria-label="Voir la photo en plein écran"
+      >
+        <img
+          src={coverPhoto.url}
+          alt={plant.nickname}
+          class="w-full h-full object-cover"
+          style={plant.main_photo_position ? `object-position: ${plant.main_photo_position.x}% ${plant.main_photo_position.y}%` : ''}
+        />
+      </button>
     {:else}
       <div class="w-full h-full flex items-center justify-center">
         <Leaf class="w-16 h-16 text-surface-3" />
@@ -957,99 +983,36 @@
     <div class="space-y-4">
       <div class="flex items-center justify-between">
         <h2 class="text-sm font-semibold text-gray-300">{photos.length} photo{photos.length > 1 ? 's' : ''}</h2>
-        <label class={['btn btn-primary h-8 px-3 text-xs cursor-pointer', uploadingPhoto ? 'opacity-70' : ''].join(' ')}>
-          <Camera class="w-3 h-3" />
-          {uploadingPhoto ? 'Envoi...' : 'Ajouter'}
-          <input
-            type="file"
-            accept="image/*"
-            onchange={uploadPhoto}
-            disabled={uploadingPhoto}
-          />
-        </label>
+        <div class="flex gap-2">
+          <label class={['btn btn-ghost h-8 px-3 text-xs cursor-pointer border border-surface-3', uploadingPhoto ? 'opacity-70 pointer-events-none' : ''].join(' ')}>
+            <Image class="w-3 h-3" />
+            Parcourir
+            <input type="file" accept="image/*" class="sr-only" onchange={uploadPhoto} disabled={uploadingPhoto} />
+          </label>
+          <label class={['btn btn-primary h-8 px-3 text-xs cursor-pointer', uploadingPhoto ? 'opacity-70 pointer-events-none' : ''].join(' ')}>
+            <Camera class="w-3 h-3" />
+            {uploadingPhoto ? 'Envoi...' : 'Photo'}
+            <input type="file" accept="image/*" capture="environment" class="sr-only" onchange={uploadPhoto} disabled={uploadingPhoto} />
+          </label>
+        </div>
       </div>
 
       {#if photos.length > 0}
-        <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-          {#each photos as photo (photo.filename)}
-            <div class="relative group aspect-square rounded-lg overflow-hidden bg-surface-2">
-              <img src={photo.url} alt={photo.filename} class="w-full h-full object-cover" loading="lazy" />
-
-              <!-- Overlay actions -->
-              <div class="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
-                {#if !photo.is_cover}
-                  <button
-                    onclick={() => setCover(photo.filename)}
-                    class="p-1.5 rounded-lg bg-surface-1/80 text-accent-amber hover:text-yellow-300 transition-colors"
-                    title="Définir comme photo principale"
-                  >
-                    <Star class="w-4 h-4" />
-                  </button>
-                {:else}
-                  <button
-                    onclick={() => (cropModalPhoto = photo)}
-                    class="p-1.5 rounded-lg bg-accent-amber/20 text-accent-amber hover:bg-accent-amber/30 transition-colors"
-                    title="Recadrer la cover"
-                  >
-                    <Crop class="w-4 h-4" />
-                  </button>
-                {/if}
-                <button
-                  onclick={() => startEditDate(photo.filename, photo.taken_at)}
-                  class="p-1.5 rounded-lg bg-surface-1/80 text-gray-300 hover:text-white transition-colors"
-                  title="Modifier la date"
-                >
-                  <CalendarDays class="w-4 h-4" />
-                </button>
-                <button
-                  onclick={() => (identifyModalPhoto = photo.filename)}
-                  class="p-1.5 rounded-lg bg-surface-1/80 text-gray-300 hover:text-accent-green transition-colors"
-                  title="Identifier"
-                >
-                  <Scan class="w-4 h-4" />
-                </button>
-                <button
-                  onclick={() => deletePhoto(photo.filename)}
-                  class="p-1.5 rounded-lg bg-surface-1/80 text-accent-red hover:text-red-300 transition-colors"
-                  title="Supprimer"
-                >
-                  <Trash2 class="w-4 h-4" />
-                </button>
-              </div>
-
-              <!-- Date edit inline -->
-              {#if editingDateFor === photo.filename}
-                <div class="absolute inset-x-0 bottom-0 bg-surface-1/95 p-2 flex gap-1">
-                  <input
-                    type="date"
-                    bind:value={editingDateValue}
-                    class="input h-7 text-xs flex-1 px-2"
-                  />
-                  <button onclick={() => saveTakenAt(photo.filename)} class="btn btn-primary h-7 px-2 text-xs">
-                    <Save class="w-3 h-3" />
-                  </button>
-                  <button onclick={() => (editingDateFor = null)} class="btn btn-ghost h-7 px-2 text-xs">
-                    <X class="w-3 h-3" />
-                  </button>
-                </div>
-              {:else if photo.taken_at}
-                <div class="absolute bottom-1 right-1">
-                  <span class="text-xs bg-black/60 text-gray-300 px-1.5 py-0.5 rounded">
-                    {formatDate(photo.taken_at)}
-                  </span>
-                </div>
-              {/if}
-
-              {#if photo.is_cover}
-                <div class="absolute bottom-1 left-1">
-                  <span class="text-xs bg-accent-amber/80 text-black px-1.5 py-0.5 rounded font-medium">
-                    Principale
-                  </span>
-                </div>
-              {/if}
-            </div>
-          {/each}
-        </div>
+        <PhotoGallery
+          photos={sortedPhotos}
+          plantId={plant.id}
+          onSetCover={setCover}
+          onCropCover={(photo) => (cropModalPhoto = photo)}
+          onEditDate={startEditDate}
+          onIdentify={(filename) => (identifyModalPhoto = filename)}
+          onDelete={deletePhoto}
+          onOpenLightbox={(photo) => (lightboxPhoto = { url: photo.url, taken_at: photo.taken_at })}
+          {editingDateFor}
+          {editingDateValue}
+          onSaveDate={saveTakenAt}
+          onCancelDate={() => (editingDateFor = null)}
+          onDateValueChange={(val) => (editingDateValue = val)}
+        />
       {:else}
         <div class="text-center text-gray-600 py-10">
           <Image class="w-8 h-8 mx-auto mb-2 opacity-50" />
