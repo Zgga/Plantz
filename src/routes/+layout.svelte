@@ -67,6 +67,7 @@
     <div class="px-4 py-3 border-t border-surface-3">
       <button
         onclick={toggleDark}
+        aria-label={darkMode ? 'Passer au mode clair' : 'Passer au mode sombre'}
         class="flex items-center gap-2 text-sm text-gray-400 hover:text-gray-100 transition-colors"
       >
         {#if darkMode}

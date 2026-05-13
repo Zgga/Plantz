@@ -109,7 +109,14 @@ export async function moveFile(src: string, dest: string): Promise<void> {
 }
 
 export async function saveBuffer(filePath: string, buffer: Buffer): Promise<void> {
-  await fs.writeFile(filePath, buffer);
+  const tmp = filePath + '.tmp';
+  try {
+    await fs.writeFile(tmp, buffer);
+    await fs.rename(tmp, filePath);
+  } catch (err) {
+    await fs.unlink(tmp).catch(() => {});
+    throw err;
+  }
 }
 
 export function pathExists(p: string): boolean {

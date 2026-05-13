@@ -1,5 +1,6 @@
 <script lang="ts">
   import { ArrowUpDown, MapPin, Leaf, AlertCircle, Sparkles, Moon } from 'lucide-svelte';
+  import { goto } from '$app/navigation';
   import type { Plant } from '$lib/types';
   import { formatDate } from '$lib/utils';
 
@@ -77,7 +78,7 @@
         {@const statusColor = statusColors[plant.status] ?? 'text-gray-400'}
         <tr
           class="hover:bg-surface-2 transition-colors cursor-pointer"
-          onclick={() => window.location.href = `/plants/${plant.id}`}
+          onclick={() => goto(`/plants/${plant.id}`)}
         >
           <!-- Thumbnail -->
           <td class="px-4 py-3">
