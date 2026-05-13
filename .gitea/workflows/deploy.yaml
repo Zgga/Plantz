@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Login to Gitea Registry
         run: |
@@ -19,8 +19,11 @@ jobs:
 
       - name: Build and Push
         run: |
-          docker build -t your-registry.example.com/your-username/plantz:latest .
-          docker push your-registry.example.com/your-username/plantz:latest
+          SHA_TAG="your-registry.example.com/your-username/plantz:${{ gitea.sha }}"
+          LATEST_TAG="your-registry.example.com/your-username/plantz:latest"
+          docker build -t "$SHA_TAG" -t "$LATEST_TAG" .
+          docker push "$SHA_TAG"
+          docker push "$LATEST_TAG"
 
   deploy-swarm:
     needs: build-and-push
@@ -28,5 +31,45 @@ jobs:
     steps:
       - name: Update Swarm Service
         run: |
-          # On force le Swarm à retélécharger l'image même si le tag est le même
-          docker service update --image your-registry.example.com/your-username/plantz:latest --force your-swarm-service-name --with-registry-auth
+          docker service update \
+            --image "your-registry.example.com/your-username/plantz:latest" \
+            --force \
+            --with-registry-auth \
+            your-swarm-service-name
+
+      - name: Wait for service to be healthy
+        run: |
+          echo "Waiting for rollout to complete..."
+          for i in $(seq 1 24); do
+            STATE=$(docker service ps your-swarm-service-name \
+              --filter "desired-state=running" \
+              --format '{{.CurrentState}}' | head -1)
+            echo "  [$i/24] State: $STATE"
+            case "$STATE" in
+              "Running"*)
+                echo "Service is up."
+                exit 0
+                ;;
+              "Failed"*|"Rejected"*)
+                echo "Deployment failed: $STATE" >&2
+                docker service ps your-swarm-service-name --no-trunc
+                exit 1
+                ;;
+            esac
+            if [ "$i" = "24" ]; then
+              echo "Timeout waiting for service to stabilize." >&2
+              docker service ps your-swarm-service-name --no-trunc
+              exit 1
+            fi
+            sleep 5
+          done
+
+      - name: Health check
+        run: |
+          HEALTH=$(curl -sf -o /dev/null -w "%{http_code}" ${{ secrets.APP_URL }}/api/health)
+          if [ "$HEALTH" != "200" ]; then
+            echo "Health check failed (HTTP $HEALTH)" >&2
+            docker service ps your-swarm-service-name --no-trunc
+            exit 1
+          fi
+          echo "Health check passed (HTTP $HEALTH)"

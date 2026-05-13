@@ -1,29 +1,50 @@
-version: '3.9'
+# Définition du service Plantz pour Docker Swarm.
+# Ce fichier est intégré dans le stack "plantit" géré via Portainer.
+# Il n'est pas déployé directement — le CI/CD utilise `docker service update`.
+#
+# Variables d'environnement injectées par Portainer au niveau du stack :
+#   PLANTNET_API_KEY, ANTHROPIC_API_KEY,
+#   OPENPLANTBOOK_CLIENT_ID, OPENPLANTBOOK_CLIENT_SECRET
+
+version: "3.9"
 
 services:
-  plantz:
-    image: plantz:latest
+  svc_plantz_app:
+    image: your-registry.example.com/your-username/plantz:latest
+    networks:
+      - net_plantit
     ports:
-      - target: 3000
-        published: 3000
-        protocol: tcp
-        mode: host
+      - "3010:3000"
     volumes:
-      - type: volume
-        source: plantz_data
-        target: /data
-        volume:
-          nocopy: true
+      - vol_plantz_data:/data
     environment:
       - NODE_ENV=production
       - PORT=3000
       - DATA_DIR=/data
+      - PLANTNET_API_KEY=${PLANTNET_API_KEY}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - OPENPLANTBOOK_CLIENT_ID=${OPENPLANTBOOK_CLIENT_ID}
+      - OPENPLANTBOOK_CLIENT_SECRET=${OPENPLANTBOOK_CLIENT_SECRET}
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
     deploy:
       replicas: 1
       restart_policy:
         condition: on-failure
         delay: 5s
         max_attempts: 3
+      update_config:
+        parallelism: 1
+        delay: 10s
+        failure_action: rollback
+        order: start-first
+      rollback_config:
+        parallelism: 1
+        failure_action: pause
       resources:
         limits:
           memory: 512M
@@ -33,10 +54,14 @@ services:
         constraints:
           - node.role == manager
 
+networks:
+  net_plantit:
+    external: true
+
 volumes:
-  plantz_data:
+  vol_plantz_data:
     driver: local
     driver_opts:
       type: nfs
-      o: "addr=${NFS_SERVER},rw,nfsvers=4"
-      device: ":${NFS_PATH}"
+      o: addr=your-nfs-server,nfsvers=4,rw
+      device: ":/path/to/your/nfs/data"

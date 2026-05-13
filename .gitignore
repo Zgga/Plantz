@@ -28,6 +28,7 @@ vite.config.ts.timestamp-*
 # AI & Tooling
 .claude/
 .vscode/
+CLAUDE.md
 
 # Logs
 npm-debug.log*
