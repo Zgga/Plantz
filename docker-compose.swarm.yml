@@ -10,7 +10,7 @@ version: "3.9"
 
 services:
   svc_plantz_app:
-    image: your-registry.example.com/your-username/plantz:latest
+    image: ${REGISTRY_HOST}/${REGISTRY_IMAGE}:latest
     networks:
       - net_plantit
     ports:
@@ -63,5 +63,5 @@ volumes:
     driver: local
     driver_opts:
       type: nfs
-      o: addr=your-nfs-server,nfsvers=4,rw
-      device: ":/path/to/your/nfs/data"
+      o: addr=${NFS_ADDR},nfsvers=4,rw
+      device: "${NFS_PATH}"
